@@ -6,7 +6,7 @@ from .augmentations import *
 from .core.composition import *
 from .core.serialization import *
 from .core.transforms_interface import *
-from .profiling import enable_profiling
+from .profiling import *
 
 try:
     from .imgaug.transforms import *  # type: ignore

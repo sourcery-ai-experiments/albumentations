@@ -1,23 +1,32 @@
 import inspect
-import typing
+from typing import Dict, List, Optional, Set, Tuple, Type, TypeVar, Union
 
-import albumentations
+import albumentations as A
 
-__all__ = ["get_filtered_transforms", "get_dual_transforms", "get_image_only_transforms", "get_transforms"]
+__all__ = [
+    "get_filtered_transforms",
+    "get_dual_transforms",
+    "get_image_only_transforms",
+    "get_transforms",
+    "get_transforms_with_compose",
+]
+
+BaseTransformType = Type[A.BasicTransform]
+BaseAndComposeType = Union[Type[A.BaseCompose], Type[A.BasicTransform]]
 
 
 def get_filtered_transforms(
-    base_classes: typing.Tuple[typing.Type, ...],
-    custom_arguments: typing.Optional[typing.Dict[typing.Type, dict]] = None,
-    except_augmentations: typing.Optional[typing.Set[typing.Type]] = None,
-) -> typing.List[typing.Tuple[typing.Type, dict]]:
+    base_classes: Tuple[BaseAndComposeType, ...],
+    custom_arguments: Optional[Dict[Type, dict]] = None,
+    except_augmentations: Optional[Set[Type]] = None,
+) -> List[Tuple[BaseAndComposeType, dict]]:
     custom_arguments = custom_arguments or {}
     except_augmentations = except_augmentations or set()
 
     result = []
 
-    for name, cls in inspect.getmembers(albumentations):
-        if not inspect.isclass(cls) or not issubclass(cls, (albumentations.BasicTransform, albumentations.BaseCompose)):
+    for name, cls in inspect.getmembers(A):
+        if not inspect.isclass(cls) or not issubclass(cls, (A.BasicTransform, A.BaseCompose)):
             continue
 
         if "DeprecationWarning" in inspect.getsource(cls) or "FutureWarning" in inspect.getsource(cls):
@@ -27,7 +36,7 @@ def get_filtered_transforms(
             continue
 
         try:
-            if issubclass(cls, albumentations.BasicIAATransform):
+            if issubclass(cls, A.BasicIAATransform):
                 continue
         except AttributeError:
             pass
@@ -38,23 +47,27 @@ def get_filtered_transforms(
 
 
 def get_image_only_transforms(
-    custom_arguments: typing.Optional[typing.Dict[typing.Type[albumentations.ImageOnlyTransform], dict]] = None,
-    except_augmentations: typing.Optional[typing.Set[typing.Type[albumentations.ImageOnlyTransform]]] = None,
-) -> typing.List[typing.Tuple[typing.Type, dict]]:
-    return get_filtered_transforms((albumentations.ImageOnlyTransform,), custom_arguments, except_augmentations)
+    custom_arguments: Optional[Dict[Type[A.ImageOnlyTransform], dict]] = None,
+    except_augmentations: Optional[Set[Type[A.ImageOnlyTransform]]] = None,
+) -> List[Tuple[BaseTransformType, dict]]:
+    return get_filtered_transforms((A.ImageOnlyTransform,), custom_arguments, except_augmentations)  # type: ignore
 
 
 def get_dual_transforms(
-    custom_arguments: typing.Optional[typing.Dict[typing.Type[albumentations.DualTransform], dict]] = None,
-    except_augmentations: typing.Optional[typing.Set[typing.Type[albumentations.DualTransform]]] = None,
-) -> typing.List[typing.Tuple[typing.Type, dict]]:
-    return get_filtered_transforms((albumentations.DualTransform,), custom_arguments, except_augmentations)
+    custom_arguments: Optional[Dict[Type[A.DualTransform], dict]] = None,
+    except_augmentations: Optional[Set[Type[A.DualTransform]]] = None,
+) -> List[Tuple[BaseTransformType, dict]]:
+    return get_filtered_transforms((A.DualTransform,), custom_arguments, except_augmentations)  # type: ignore
 
 
 def get_transforms(
-    custom_arguments: typing.Optional[typing.Dict[typing.Type[albumentations.BasicTransform], dict]] = None,
-    except_augmentations: typing.Optional[typing.Set[typing.Type[albumentations.BasicTransform]]] = None,
-) -> typing.List[typing.Tuple[typing.Type, dict]]:
+    custom_arguments: Optional[Dict[Type[A.BasicTransform], dict]] = None,
+    except_augmentations: Optional[Set[Type[A.BasicTransform]]] = None,
+) -> List[Tuple[BaseTransformType, dict]]:
     return get_filtered_transforms(
-        (albumentations.ImageOnlyTransform, albumentations.DualTransform), custom_arguments, except_augmentations
-    )
+        (A.ImageOnlyTransform, A.DualTransform), custom_arguments, except_augmentations
+    )  # type: ignore
+
+
+def get_transforms_with_compose() -> List[BaseAndComposeType]:
+    return [i[0] for i in get_filtered_transforms((A.ImageOnlyTransform, A.DualTransform, A.BaseCompose), None, None)]

@@ -1,60 +1,76 @@
 import time
+from dataclasses import dataclass
 from functools import wraps
-from typing import Callable, Optional
+from typing import Callable, Dict, Optional, Tuple, Type, TypeVar, Union
 
 from typing_extensions import ParamSpec
 
-from .utils import get_transforms
+from .utils import BaseAndComposeType, get_transforms_with_compose
+
+__all__ = ["Profiler"]
 
 P = ParamSpec("P")
+T = TypeVar("T")
 
 
-class ProfileData:
-    def __init__(self, name: str, dt: float, profile_data: Optional["ProfileData"]):
-        self.name = name
-        self.dt = dt
-        self.profile_data = profile_data
+class Profiler:
+    @dataclass
+    class Data:
+        name: str
+        dt: float
+        profile_data: Optional["Profiler.Data"]
 
+    def __init__(self):
+        self._original_functions = self._get_functions()
+        self._last_data: Optional[Profiler.Data] = None
+        self._statistics = None
 
-def profile_wrapper(name: str) -> Callable:
-    def _decorate(func: Callable[P, dict]) -> Callable[P, dict]:
+        # Set wrapper
+        for name, (cls, func_name, func) in self._original_functions.items():
+            setattr(cls, func_name, self._profile_wrapper(name, func))
+
+    def __del__(self):
+        # Remove profile wrapper
+        for name, (cls, func_name, func) in self._original_functions.items():
+            setattr(cls, func_name, func)
+
+    @staticmethod
+    def _get_functions() -> Dict[str, Tuple[BaseAndComposeType, str, Callable]]:
+        transforms = get_transforms_with_compose()
+
+        wrapped_methods_names = (
+            "__call__",
+            "apply",
+            "apply_to_bbox",
+            "apply_to_bboxes",
+            "apply_to_keypoint",
+            "apply_to_keypoints",
+            "apply_to_mask",
+            "apply_to_masks",
+        )
+        res = {}
+        for cls_obj in transforms:
+            cls_name = cls_obj.get_class_fullname()
+            for name in wrapped_methods_names:
+                if hasattr(cls_obj, name):
+                    res[f"{cls_name}.{name}"] = cls_obj, name, getattr(cls_obj, name)
+        return res
+
+    def _profile_wrapper(self, name: str, func: Callable[P, T]) -> Callable[P, T]:
         @wraps(func)
-        def wrapped_func(*args: P.args, **kwargs: P.kwargs) -> dict:
-            profile = kwargs.get("profile", False)
-            if not profile:
-                return func(*args, **kwargs)
-
+        def wrapped_func(*args: P.args, **kwargs: P.kwargs) -> T:
             s = time.time()
             res = func(*args, **kwargs)
             dt = time.time() - s
 
-            prof = res.get("profile_results", None)
-            if prof is not None and not isinstance(prof, ProfileData):
-                raise ValueError(f"Wrong type of `profile_results`. Must be {type(ProfileData)}. Got: {type(prof)}")
-
-            res["profile_results"] = ProfileData(name=name, dt=dt, profile_data=prof)
+            self._last_data = self.Data(name=name, dt=dt, profile_data=self._last_data)
             return res
 
         return wrapped_func
 
-    return _decorate
+    def __enter__(self):
+        if self._last_data is not None:
+            raise RuntimeError
 
-
-def enable_profiling():
-    transforms = get_transforms()
-
-    wrapped_methods_names = (
-        "__call__",
-        "apply",
-        "apply_to_bbox",
-        "apply_to_bboxes",
-        "apply_to_keypoint",
-        "apply_to_keypoints",
-        "apply_to_mask",
-        "apply_to_masks",
-    )
-    for cls_obj, _ in transforms:
-        cls_name = cls_obj.get_class_fullname()
-        for name in wrapped_methods_names:
-            if hasattr(cls_obj, name):
-                setattr(cls_obj, name, profile_wrapper(f"{cls_name}.{name}")(getattr(cls_obj, name)))
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        raise NotImplementedError
